@@ -7,15 +7,35 @@ struct Desc {
 	string type;
 }
 
-string[Desc[]] parseDesc() {
-	string[Desc[]] d;
+Desc[][string] parseDesc() {
+	Desc[][string] viewsDesc;
 	static reDashes = ctRegex!"^--------";
 	static reViewName = ctRegex!"^\\+\\+\\+(.*)\\+\\+\\+$";
+	static reHeader   = ctRegex!r"Name\s+Null\s+Type";
+	static reNameType = ctRegex!r"^\s*(\S+)\s+(\S+)$";
+	string vname;
+	Desc[] desc;
 	auto fdesc = File("fvdesc.txt");
 	foreach (l; fdesc.byLine) {
-
+		if (matchFirst(l,reDashes) || matchFirst(l,reHeader)) {
+			continue;
+		} else if (auto m = match(l,reViewName)) {
+			if (vname != "") {
+				viewsDesc[vname] = desc;
+				desc = [];
+			}
+			vname = m.captures[0];
+		} else if (auto m = match(l,reNameType)) {
+			Desc d;
+			d.name = m[0];
+			d.type = m[1];
+			desc ~= d;
+		}
 	}
-	return d;
+	if (vname != "") {
+		viewsDesc[vname] = desc;
+	}
+	return viewsDesc;
 }
 
 string[string] parseSelect() {
