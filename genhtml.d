@@ -3,8 +3,8 @@
 import std.stdio, std.string, std.conv;
 
 struct Desc {
-	string name;
-	string type;
+	string nam;
+	string typ;
 }
 
 Desc[][string] parseDesc() {
@@ -14,19 +14,19 @@ Desc[][string] parseDesc() {
 	auto fdesc = File("fvdesc.txt");
 	foreach (l; fdesc.byLine) {
 		auto ll = l.to!string;
-		if (ll.indexOf(" Name                                                  Null?    Type") 
-				|| ll.indexOf(" ----------------------------------------------------- -------- ------------------------------------")) {
+		if (ll.indexOf(" Name                                                  Null?    Type") != -1
+				|| ll.indexOf(" ----------------------------------------------------- -------- ------------------------------------") != -1) {
 			continue;
-		} else if (ll.length > 6 && ll[0..2] == "+++" && ll[-2..$] == "+++") {
+		} else if (ll.length > 6 && ll[0..3] == "+++" && ll[$-3..$] == "+++") {
 			if (vname != "") {
 				viewsDesc[vname] = desc;
 				desc = [];
 			}
-			vname = ll[3..-3];
+			vname = ll[3..$-3];
 		} else if (split(ll).length == 2) {
 			Desc d;
-			d.name = split(ll)[0];
-			d.type = split(ll)[1];
+			d.nam = split(ll)[0];
+			d.typ = split(ll)[1];
 			desc ~= d;
 		}
 	}
@@ -48,6 +48,14 @@ void main() {
 	Desc[][string] desc;
 	string[string] sel;
 	desc = parseDesc();
+	debug {
+		foreach (v,dd; desc) {
+			writeln(v);
+			foreach (d; dd) {
+				writeln("  ",d.nam,"\t",d.typ);
+			}
+		}
+	}
 	sel = parseSelect();
 	foreach (view; sel) {
 		generateHtml(view);
