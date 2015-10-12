@@ -1,6 +1,6 @@
 // generate html files for every fixed view
 
-import std.stdio, std.string, std.regex, std.conv;
+import std.stdio, std.string, std.conv;
 
 struct Desc {
 	string name;
@@ -9,26 +9,24 @@ struct Desc {
 
 Desc[][string] parseDesc() {
 	Desc[][string] viewsDesc;
-	static reDashes = regex(r"^--------");
-	static reViewName = regex(r"^\+\+\+(.*)\+\+\+$");
-	static reHeader   = regex(r"Name\s+Null\s+Type");
-	static reNameType = regex(r"^\s*(\S+)\s+(\S+)$");
 	string vname;
 	Desc[] desc;
 	auto fdesc = File("fvdesc.txt");
-	foreach (l; fdesc.byLine.to!string) {
-		if (matchFirst(l,reDashes) || matchFirst(l,reHeader)) {
+	foreach (l; fdesc.byLine) {
+		auto ll = l.to!string;
+		if (ll.indexOf(" Name                                                  Null?    Type") 
+				|| ll.indexOf(" ----------------------------------------------------- -------- ------------------------------------")) {
 			continue;
-		} else if (auto m = match(l,reViewName)) {
+		} else if (ll.length > 6 && ll[0..2] == "+++" && ll[-2..$] == "+++") {
 			if (vname != "") {
 				viewsDesc[vname] = desc;
 				desc = [];
 			}
-			vname = m[1];
-		} else if (auto m = match(l,reNameType)) {
+			vname = ll[3..-3];
+		} else if (split(ll).length == 2) {
 			Desc d;
-			d.name = m[1];
-			d.type = m[2];
+			d.name = split(ll)[0];
+			d.type = split(ll)[1];
 			desc ~= d;
 		}
 	}
