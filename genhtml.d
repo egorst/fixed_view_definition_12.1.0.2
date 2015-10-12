@@ -1,6 +1,6 @@
 // generate html files for every fixed view
 
-import std.stdio, std.string, std.regex;
+import std.stdio, std.string, std.regex, std.conv;
 
 struct Desc {
 	string name;
@@ -9,14 +9,14 @@ struct Desc {
 
 Desc[][string] parseDesc() {
 	Desc[][string] viewsDesc;
-	static reDashes = ctRegex!"^--------";
-	static reViewName = ctRegex!"^\\+\\+\\+(.*)\\+\\+\\+$";
-	static reHeader   = ctRegex!r"Name\s+Null\s+Type";
-	static reNameType = ctRegex!r"^\s*(\S+)\s+(\S+)$";
+	static reDashes = regex(r"^--------");
+	static reViewName = regex(r"^\+\+\+(.*)\+\+\+$");
+	static reHeader   = regex(r"Name\s+Null\s+Type");
+	static reNameType = regex(r"^\s*(\S+)\s+(\S+)$");
 	string vname;
 	Desc[] desc;
 	auto fdesc = File("fvdesc.txt");
-	foreach (l; fdesc.byLine) {
+	foreach (l; fdesc.byLine.to!string) {
 		if (matchFirst(l,reDashes) || matchFirst(l,reHeader)) {
 			continue;
 		} else if (auto m = match(l,reViewName)) {
@@ -24,11 +24,11 @@ Desc[][string] parseDesc() {
 				viewsDesc[vname] = desc;
 				desc = [];
 			}
-			vname = m.captures[0];
+			vname = m[1];
 		} else if (auto m = match(l,reNameType)) {
 			Desc d;
-			d.name = m[0];
-			d.type = m[1];
+			d.name = m[1];
+			d.type = m[2];
 			desc ~= d;
 		}
 	}
@@ -47,7 +47,7 @@ void generateHtml(string v) {
 }
 
 void main() {
-	string[Desc[]] desc;
+	Desc[][string] desc;
 	string[string] sel;
 	desc = parseDesc();
 	sel = parseSelect();
