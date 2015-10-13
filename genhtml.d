@@ -35,6 +35,38 @@ Desc[][string] parseDesc() {
 	return viewsDesc;
 }
 
+string stripSpaces(char[] l) {
+	bool prevspace = false;
+	bool insidequotes = false;
+	char[] newl;
+	foreach (c; l) {
+		if (insidequotes) {
+			if (c == '\'') {
+				insidequotes = false;
+			}
+			newl ~= c;
+		} else {
+			switch (c) {
+				case '\'':
+					insidequotes = true;
+					newl ~= c;
+					prevspace = false;
+					break;
+				case ' ':
+					if (!prevspace) {
+						prevspace = true;
+						newl ~= c;
+					}
+					break;
+				default:
+					prevspace = false;
+					newl ~= c;
+			}
+		}
+	}
+	return newl.to!string;
+}
+
 string[string] parseSelect() {
 	string[string] s;
 	string viewname;
@@ -48,7 +80,7 @@ string[string] parseSelect() {
 			if (l.length > 4037) {
 				writeln("line #",i," view ",viewname,": too long definition");
 			}
-			s[viewname] = l[37..$].strip.to!string;
+			s[viewname] = stripSpaces(l[37..$].strip);
 		} else {
 			writeln("unknown line #",i);
 		}
