@@ -1,6 +1,6 @@
 // generate html files for every fixed view
 
-import std.stdio, std.string, std.conv;
+import std.stdio, std.string, std.conv, std.file;
 
 struct Desc {
 	string nam;
@@ -67,9 +67,28 @@ string stripSpaces(char[] l) {
 	return newl.to!string;
 }
 
+char[] kqfSearch(char[] pat) {
+	auto qf = File("kqf.o");
+	ubyte[] upat = cast(ubyte[]) pat;
+	char[8*1024*1024] s;
+	auto buf = cast(ubyte[])std.file.read("kqf.o",8*1024*1024);
+	auto ind = std.string.indexOf(cast(char[])buf,pat[1..$]);
+	if (ind != -1) {
+		long i = ind;
+		ubyte[] b;
+		do {
+			b = buf[i..i+1];
+			i += 1;
+		} while (b[0] != 0);
+		return cast(char[])buf[ind..i-1];
+	}
+	return null;
+}
+
 string[string] parseSelect() {
 	string[string] s;
 	string viewname;
+	char[] viewdef;
 	auto fv = File("fvdef.lst");
 	int i = 0;
 	foreach (l; fv.byLine) {
@@ -78,9 +97,13 @@ string[string] parseSelect() {
 			auto secondmarker = l[3..$].indexOf("+++")+3;
 			viewname = l[3..secondmarker].to!string;
 			if (l.length > 4037) {
-				writeln("line #",i," view ",viewname,": too long definition");
+				viewdef = kqfSearch(l[37..157]);
+				if (viewdef.length > 0) {
+					s[viewname] = stripSpaces(viewdef.strip);
+				}
+			} else {
+				s[viewname] = stripSpaces(l[37..$].strip);
 			}
-			s[viewname] = stripSpaces(l[37..$].strip);
 		} else {
 			writeln("unknown line #",i);
 		}
