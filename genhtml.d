@@ -7,6 +7,11 @@ struct Desc {
 	string typ;
 }
 
+struct Token {
+	int depth;
+	string tok;
+}
+
 Desc[][string] parseDesc() {
 	Desc[][string] viewsDesc;
 	string vname;
@@ -111,13 +116,96 @@ string[string] parseSelect() {
 	return s;
 }
 
-void generateHtml(string v) {
+Token[] pruneToks(Token[] toks) {
+	Token[] ptoks;
+	foreach (i,t; toks) {
+		if (!(strip(t.tok) == "" && strip(toks[i-1].tok)[$-1..$] == ",")) {
+			ptoks ~= t;
+		}
+	}
+	return ptoks;
 }
 
+int selectMinDepth(Token[] toks) {
+	int md = int.max;
+	foreach (t; toks) {
+		if (strip(t.tok).toLower == "select") {
+			if (md > t.depth) {
+				md = t.depth;
+			}
+		}
+	}
+	return md;
+}
+
+Token[] tokenizeDefinition(string s) {
+	Token[] toks;
+	int depth = 0;
+	bool inquotes = false;
+	Token t;
+	string tok;
+	foreach (c; s) {
+		if (c == '\'') {
+			if (inquotes) {
+				inquotes = false;
+			} else {
+				inquotes = true;
+			}
+		}
+		if (!inquotes) {
+			if (c == ' ' || c == ',') {
+				tok ~= c;
+				t.depth = depth;
+				t.tok = tok;
+				toks ~= t;
+				tok = "";
+			} else if (c == '(') {
+				tok ~= c;
+				t.depth = depth;
+				t.tok = tok;
+				toks ~= t;
+				tok = "";
+			} else if (c == ')') {
+				tok ~= c;
+				t.depth = depth;
+				t.tok = tok;
+				toks ~= t;
+				tok = "";
+			} else {
+				tok ~= c;
+			}
+			if (c == '(') {
+				depth += 1;
+			}
+			if (c == ')') {
+				depth -= 1;
+			}
+		} else {
+			tok ~= c;
+		}
+	}
+	t.depth = depth;
+	t.tok = tok;
+	toks ~= t;
+	return pruneToks(toks);
+}
+
+void generateHtml(string v,string vd) {
+	Token[] toks = tokenizeDefinition(vd);
+	debug {
+		writeln("=====\nview ",v, " selMinDepth=",selectMinDepth(toks));
+		foreach (t; toks) {
+			writeln(leftJustify("",t.depth*2),t.tok);
+		}
+	}
+}
+
+Desc[][string] desc;
+string[string] sel;
+
 void main() {
-	Desc[][string] desc;
-	string[string] sel;
 	desc = parseDesc();
+	/*
 	debug {
 		foreach (v,dd; desc) {
 			writeln(v);
@@ -126,14 +214,17 @@ void main() {
 			}
 		}
 	}
+	*/
 	sel = parseSelect();
+	/*
 	debug {
 		foreach (v,vd; sel) {
 			writeln(v,":",vd);
 		}
 	}
-	foreach (view; sel) {
-		generateHtml(view);
+	*/
+	foreach (view,vdef; sel) {
+		generateHtml(view,vdef);
 	}
 }
 
