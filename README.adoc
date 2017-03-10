@@ -1,6 +1,6 @@
 == Fixed Views Definitions in Oracle 12.1.0.2
 
-.kqf.o
+.in order to obtain kqf.o (needed by genhtml) run the following command:
 [source,sh]
 $ ar -x $ORACLE_HOME/lib/libserver12.a kqf.o
 
