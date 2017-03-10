@@ -1,0 +1,6 @@
+== Fixed Views Definitions in Oracle 12.1.0.2
+
+.kqf.o
+[source,sh]
+$ ar -x $ORACLE_HOME/lib/libserver12.a kqf.o
+
