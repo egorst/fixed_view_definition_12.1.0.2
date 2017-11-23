@@ -2,7 +2,8 @@
 
 import std.stdio, std.string, std.conv, std.file;
 import std.uni : toLower;
-import std.algorithm;
+import std.algorithm, std.array;
+import std.typecons: No;
 
 const int MAXLEN = 42;
 
@@ -33,10 +34,11 @@ Desc[][string] parseDesc() {
                 desc = [];
             }
             vname = l[3..$-3].to!string;
-        } else if (split(l).length == 2) {
+        } else if (split(l).length >= 2) {
+            auto la = split(l);
             Desc d;
-            d.nam = split(l)[0].to!string;
-            d.typ = split(l)[1].to!string;
+            d.nam = la[0].to!string;
+            d.typ = join(la[1..$]," ").to!string;
             desc ~= d;
         }
     }
@@ -396,6 +398,99 @@ void generateHtml(string v,string vd) {
     }
 }
 
+long indexOfStr(string s, string chk) {
+    char[] s2 = s.dup;
+    bool inquotes, inparen;
+    ulong pos;
+    int lvl;
+    for (auto i=0; i<s2.length; i++) {
+        if (s2[i] == '\'') {
+            inquotes = ! inquotes;
+        }
+        if (!inquotes) {
+            if (s2[i] == '(') {
+                lvl += 1;
+            } else if (s2[i] == ')') {
+                lvl -= 1;
+            }
+            if (lvl != 0) {
+                s2[i] = '~';
+            }
+        } else {
+            s2[i] = '~';
+        }
+    }
+    return indexOf(s2, chk, No.caseSensitive);
+}
+
+ulong[] getSelectPositions (string s) {
+    ulong[] sp;
+    bool inquotes = false;
+    int lvl = 0;
+    int pos = -1;
+    int cpos = 0;
+    string tok = "";
+    foreach (c; s) {
+        pos += 1;
+        if (c == '\'') {
+            inquotes = ! inquotes;
+        }
+        if (!inquotes) {
+            if (c == ' ') {
+                if ((std.string.toLower(tok) == "select") && (lvl == 0)) {
+                    sp ~= pos-6;
+                }
+                tok = "";
+            } else {
+                if (c == '(') {
+                    lvl += 1;
+                } else if (c == ')') {
+                    lvl -= 1;
+                }
+                tok ~= c;
+            }
+        } else {
+            tok ~= c;
+        }
+    }
+    if ((std.string.toLower(tok) == "select") && (lvl == 0)) {
+        sp ~= pos-6;
+    }
+    return sp;
+}
+
+string[] getCommaFields (string s) {
+    string[] toks = [];
+    bool inquotes = false;
+    bool inparens = false;
+    string tok = "";
+    int pos = -1;
+    int lvl = 0;
+    foreach (c; strip(s)) {
+        pos += 1;
+        if (c == '\'') {
+            inquotes = ! inquotes;
+        }
+        if (!inquotes) {
+            tok ~= c;
+            if (c == '(') {
+                lvl += 1;
+            } else if (c == ')') {
+                lvl -= 1;
+            } else if ((c == ',') && (lvl == 0)) {
+                toks ~= tok;
+                tok = "";
+            }
+        } else {
+            tok ~= c;
+        }
+    }
+    if (tok.length > 0) {
+        toks ~= tok;
+    }
+    return toks;
+}
+
 Desc[][string] desc;
 string[string] sel;
 
@@ -412,7 +507,174 @@ void main() {
     }
     */
     sel = parseSelect();
-    
+    ulong[] selpos;
+
+    void printField(string f, int offset=0, Desc d=Desc()) {
+        string[] dtoks;
+        long commentBeg = indexOf(f,"/*");
+        long commentEnd = indexOf(f,"*/");
+        if (commentBeg != -1) {
+            writeln(" ".replicate(offset),f[commentBeg..commentEnd+2]);
+            f = strip(f[commentEnd+2..$]);
+        }
+        if (startsWith(toLower(f),"decode")) {
+            f = f.replace("decode ","decode");
+            dtoks = getCommaFields(f[7..$-2]);
+            writeln(" ".replicate(offset),f[0..7],dtoks[0],"  -- ",d.nam," ",d.typ);
+            for (auto i=1;i < dtoks.length-1; i += 2) {
+                writeln(" ".replicate(offset+2),strip(dtoks[i])," ",strip(dtoks[i+1]));
+            }
+            if (dtoks.length % 2 == 0) {
+                writeln(" ".replicate(offset+2),strip(dtoks[$-1]));
+            }
+            writeln(" ".replicate(offset),f[$-2..$]);
+        } else if (startsWith(toLower(f),"to_number")) {
+            if (f.length > MAXLEN) {
+                writeln(" ".replicate(offset),f[0..10],"\n    ",f[10..$]);
+            } else {
+                writeln(" ".replicate(offset),f);
+            }
+        } else if (startsWith(toLower(f),"to_date")) {
+            if (f.length > MAXLEN) {
+                dtoks = getCommaFields(f[8..$-2]);
+                writeln(" ".replicate(offset),f[0..8],strip(dtoks[0]));
+                write(" ".replicate(offset+2));
+                foreach (el;dtoks[1..$]) {
+                    write(strip(el));
+                }
+                //writeln("    ",join(dtoks[1..$]));
+                writeln(f[$-2..$]);
+            } else {
+                writeln(" ".replicate(offset),f,"    -- ",d.nam," ",d.typ);
+            }
+        } else if (startsWith(toLower(f),"case")) {
+            bool case2comment = true;
+            dtoks = split(f);
+            std.stdio.write(" ".replicate(offset),strip(dtoks[0])," ");
+            foreach (el;dtoks[1..$]) {
+                if (strip(toLower(el)) in ["when":0]) {
+                    if (case2comment) {
+                        std.stdio.write("    -- ",d.nam, " ",d.typ);
+                        case2comment = false;
+                    }
+                    std.stdio.write("\n"," ".replicate(offset+2),strip(el)," ");
+                } else if (strip(toLower(el)) in ["then":1,"else":2]) {
+                    std.stdio.write("\n"," ".replicate(offset+2),strip(el)," ");
+                } else if (strip(toLower(el)) == "end,") {
+                    std.stdio.write("\n"," ".replicate(offset),strip(el));
+                } else if (toLower(el) == "end") {
+                    std.stdio.write("\n"," ".replicate(offset),strip(el),"\n  ");
+                } else {
+                    std.stdio.write(el," ");
+                }
+            }
+            writeln("");
+        } else {
+            writeln(" ".replicate(offset),f,"    -- ",d.nam," ",d.typ);
+        }
+    }
+
+    void printSelectFields(string s, long pos2, int offset=0, Desc[] vdesc=[]) {
+        writeln(" ".replicate(offset),s[0..7]);
+        auto selfields = getCommaFields(s[7..pos2-1]);
+        foreach (ind,f; selfields) {
+            f = strip(f);
+            printField(f,offset+2,vdesc[ind]);
+        }
+        //writeln(" ".replicate(offset+2),s[7..pos2-1]);
+    }
+
+    void printFromClause(string s, long pos1, long pos2, int offset=0) {
+        if (pos1 == -1) return;
+
+        writeln(" ".replicate(offset),s[pos1..pos1+5]);
+        writeln(" ".replicate(offset+2),s[pos1+5..pos2]);
+    }
+
+    void printWhereClause(string s, long pos1, long pos2, int offset=0) {
+        if (pos1 == -1) return;
+
+        writeln(" ".replicate(offset),s[pos1..pos1+6]);
+        writeln(" ".replicate(offset+2),s[pos1+6..pos2]);
+    }
+
+    void printGroupbyClause(string s, long pos1, long pos2, int offset=0) {
+        if (pos1 == -1) return;
+
+        writeln(" ".replicate(offset),s[pos1..pos1+9]);
+        writeln(" ".replicate(offset+2),s[pos1+9..pos2]);
+    }
+
+    void printHavingClause(string s, long pos1, long pos2, int offset=0) {
+        if (pos1 == -1) return;
+
+        writeln(" ".replicate(offset),s[pos1..pos1+7]);
+        writeln(" ".replicate(offset+2),s[pos1+7..pos2]);
+    }
+
+    void printOrderbyClause(string s, long pos1, long pos2, int offset=0) {
+        if (pos1 == -1) return;
+
+        writeln(" ".replicate(offset),s[pos1..pos1+9]);
+        writeln(" ".replicate(offset+2),s[pos1+9..pos2]);
+    }
+
+    void printUnionallClause(string s, long pos1,long pos2, int offset=0) {
+        if (pos1 == -1) return;
+
+        writeln(s[pos1..pos1+10]);
+        if (pos1+10 != pos2) {
+            writeln(" ".replicate(offset),s[pos1+10..pos2]);
+        }
+    }
+
+    void printSelect(string v, string vd, int offset=0) {
+        long frompos,wherepos,unionallpos,orderbypos,groupbypos,havingpos;
+        frompos = indexOfStr(vd,"from ");
+        wherepos = indexOfStr(vd,"where ");
+        unionallpos = indexOfStr(vd,"union all ");
+        groupbypos = indexOfStr(vd,"group by ");
+        havingpos = indexOfStr(vd,"having ");
+        orderbypos = indexOfStr(vd,"order by ");
+
+        auto poses = [frompos,wherepos,unionallpos,groupbypos,havingpos,orderbypos];
+        
+        long[] pa2;
+        long pos2;
+        
+        pa2 = poses.filter!(a=>a>-1).array;
+        pos2 = (pa2.length > 0) ? pa2.minElement : vd.length;
+        printSelectFields(vd,pos2,offset,desc[v]);
+
+        pa2 = poses.filter!(a=>a>frompos).array; pos2 = (pa2.length > 0) ? pa2.minElement : vd.length;
+        printFromClause(vd,frompos,pos2,offset);
+
+        pa2 = poses.filter!(a=>a>wherepos).array; pos2 = (pa2.length > 0) ? pa2.minElement : vd.length;
+        printWhereClause(vd,wherepos,pos2,offset);
+
+        pa2 = poses.filter!(a=>a>groupbypos).array; pos2 = (pa2.length > 0) ? pa2.minElement : vd.length;
+        printGroupbyClause(vd,groupbypos,pos2,offset);
+
+        pa2 = poses.filter!(a=>a>havingpos).array; pos2 = (pa2.length > 0) ? pa2.minElement : vd.length;
+        printHavingClause(vd,havingpos,pos2,offset);
+
+        pa2 = poses.filter!(a=>a>orderbypos).array; pos2 = (pa2.length > 0) ? pa2.minElement : vd.length;
+        printOrderbyClause(vd,orderbypos,pos2,offset);
+
+        pa2 = poses.filter!(a=>a>unionallpos).array; pos2 = (pa2.length > 0) ? pa2.minElement : vd.length;
+        printUnionallClause(vd,unionallpos,pos2,offset);
+    }
+
+    foreach (v,vd; sel) {
+        selpos = getSelectPositions(vd);
+        selpos ~= vd.length;
+        writeln("\n*** ",v, ":",vd,"\n");
+        foreach (i,a1; selpos[0..$-1]) {
+            auto a2 = selpos[i+1];
+            printSelect(v,vd[a1..a2]);
+        }
+    }
+
     debug {
         int[] selpos, frompos, wherepos;
         string[] dtoks;
