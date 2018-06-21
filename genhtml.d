@@ -4,8 +4,11 @@ import std.stdio, std.string, std.conv, std.file;
 import std.uni : toLower;
 import std.algorithm, std.array;
 import std.typecons: No;
+import std.getopt;
 
 const int MAXLEN = 42;
+
+bool textmode;
 
 struct Desc {
     string nam;
@@ -494,7 +497,29 @@ string[] getCommaFields (string s) {
 Desc[][string] desc;
 string[string] sel;
 
-void main() {
+void main(string[] args) {
+    auto opts = getopt(args, "text", &textmode);
+    if (!textmode) {
+        writeln("<doctype html>\n<html>\n<head>\n<title>fixed views definitions\n</title>\n");
+        writeln("<style>\n");
+        writeln(q""pre .fu, pre .co,pre .kwd{font-weight:700}
+pre {display:block;background-color:#fff}
+pre .nocode{background-color:none;color:#fff}
+pre .str{color:#333}
+pre .kwd{color:#07c}
+pre .co{color:#2a2}
+pre .typ{color:#98fb98}
+pre .fun{color:#3d2c2c}
+pre .pln,pre .pun{color:#fff}
+pre .tag{color:khaki}
+pre .atn{color:#bdb76b}
+pre .atv{color:#ffa0a0}
+pre .dec{color:#98fb98}
+"");
+        writeln("</style>\n");
+        writeln("</head>\n<body>\n");
+        writeln("<pre><code>\n");
+    }
     desc = parseDesc();
     /*
     debug {
@@ -509,73 +534,187 @@ void main() {
     sel = parseSelect();
     ulong[] selpos;
 
+    ulong getPaddingLength(string s) {
+        ulong res = 4;
+        if (s.length < 40) {
+            res = 40 - s.length;
+        } else if (s.length < 60) {
+            res = 60 - s.length;
+        } else if (s.length < 80) {
+            res = 80 - s.length;
+        }
+        return res;
+    }
+
     void printField(string f, int offset=0, Desc d=Desc()) {
         string[] dtoks;
+        ulong padlen;
         long commentBeg = indexOf(f,"/*");
         long commentEnd = indexOf(f,"*/");
         if (commentBeg != -1) {
-            writeln(" ".replicate(offset),f[commentBeg..commentEnd+2]);
+            if (textmode) {
+                writeln(" ".replicate(offset),f[commentBeg..commentEnd+2]);
+            } else {
+                writeln(" ".replicate(offset),"<span class=\"co\">",f[commentBeg..commentEnd+2],"</span>");
+            }
             f = strip(f[commentEnd+2..$]);
         }
         if (startsWith(toLower(f),"decode")) {
             f = f.replace("decode ","decode");
             dtoks = getCommaFields(f[7..$-2]);
-            writeln(" ".replicate(offset),f[0..7],dtoks[0],"  -- ",d.nam," ",d.typ);
+            padlen = getPaddingLength(" ".replicate(offset)~f[0..7]~dtoks[0]);
+            if (textmode) {
+                writeln(" ".replicate(offset),f[0..7],dtoks[0]," ".replicate(padlen),"-- ",d.nam," ",d.typ);
+            } else {
+                writeln(" ".replicate(offset),"<span class=\"fu\">",f[0..7],"</span>",dtoks[0]," ".replicate(padlen),"<span class=\"co\">-- ",d.nam," ",d.typ,"</span>");
+            }
             for (auto i=1;i < dtoks.length-1; i += 2) {
                 writeln(" ".replicate(offset+2),strip(dtoks[i])," ",strip(dtoks[i+1]));
             }
             if (dtoks.length % 2 == 0) {
-                writeln(" ".replicate(offset+2),strip(dtoks[$-1]));
+                if (dtoks.length > 1 && strip(dtoks[$-1])[$-1] == ')') {
+                    writeln(" ".replicate(offset+2),strip(dtoks[$-1]));
+                } else {
+                    std.stdio.write(" ".replicate(offset+2),strip(dtoks[$-1]));
+                }
             }
-            writeln(" ".replicate(offset),f[$-2..$]);
+
+            if (dtoks.length > 1 && strip(dtoks[$-1])[$-1] == ')') {
+                writeln(" ".replicate(offset),f[$-2..$]);
+            } else {
+                writeln(f[$-2..$]);
+            }
+            /*
         } else if (startsWith(toLower(f),"to_number")) {
             if (f.length > MAXLEN) {
-                writeln(" ".replicate(offset),f[0..10],"\n    ",f[10..$]);
+                padlen = getPaddingLength(" ".replicate(offset)~f[0..10]);
+                writeln(" ".replicate(offset),f[0..10]," ".replicate(padlen),"-- ",d.nam," ",d.typ,"\n    ",f[10..$]);
             } else {
-                writeln(" ".replicate(offset),f);
+                padlen = getPaddingLength(" ".replicate(offset)~f);
+                writeln(" ".replicate(offset),f," ".replicate(padlen),"-- ",d.nam, " ", d.typ);
             }
-        } else if (startsWith(toLower(f),"to_date")) {
+            */
+        } else if (startsWith(toLower(f),"to_date")
+                    || startsWith(toLower(f),"to_timestamp")
+                    || startsWith(toLower(f),"to_number")
+                    || startsWith(toLower(f),"substr")
+                    || startsWith(toLower(f),"floor")
+                    || startsWith(toLower(f),"round")
+                    || startsWith(toLower(f),"abs")
+                    || startsWith(toLower(f),"nvl")) {
+            long startind;
+            if (startsWith(toLower(f),"to_date")) {
+                startind = 8;
+            } else if (startsWith(toLower(f),"to_timestamp")) {
+                startind = 13;
+            } else if (startsWith(toLower(f),"to_number")) {
+                startind = 10;
+            } else if (startsWith(toLower(f),"substr")) {
+                startind = 7;
+            } else if (startsWith(toLower(f),"floor") || startsWith(toLower(f),"round")) {
+                startind = 6;
+            } else if (startsWith(toLower(f),"abs") || startsWith(toLower(f),"nvl")) {
+                startind = 4;
+            }
             if (f.length > MAXLEN) {
-                dtoks = getCommaFields(f[8..$-2]);
-                writeln(" ".replicate(offset),f[0..8],strip(dtoks[0]));
-                write(" ".replicate(offset+2));
-                foreach (el;dtoks[1..$]) {
-                    write(strip(el));
+                dtoks = getCommaFields(f[startind..$-2]);
+                if (strip(dtoks[0]).length + offset + startind > MAXLEN) {
+                    padlen = getPaddingLength(" ".replicate(offset)~f[0..startind]);
+                    if (textmode) {
+                        writeln(" ".replicate(offset),f[0..startind]," ".replicate(padlen),"-- ",d.nam," ",d.typ);
+                        write(" ".replicate(offset+2)~strip(dtoks[0]));
+                    } else {
+                        writeln(" ".replicate(offset),"<span class=\"fu\">",f[0..startind],"</span>"," ".replicate(padlen),"<span class=\"co\">-- ",d.nam," ",d.typ,"</span>");
+                        write(" ".replicate(offset+2)~strip(dtoks[0]));
+                    }
+                    foreach (el;dtoks[1..$]) {
+                        write(strip(el));
+                    }
+                } else {
+                    padlen = getPaddingLength(" ".replicate(offset)~f[0..startind]~strip(dtoks[0]));
+                    if (textmode) {
+                        writeln(" ".replicate(offset),f[0..startind],strip(dtoks[0])," ".replicate(padlen),"-- ",d.nam," ",d.typ);
+                    } else {
+                        writeln(" ".replicate(offset),"<span class=\"fu\">",f[0..startind],"</span>",strip(dtoks[0]),
+                                " ".replicate(padlen),"<span class=\"co\">-- ",d.nam," ",d.typ,"</span>");
+                    }
+                    write(" ".replicate(offset+2));
+                    foreach (el;dtoks[1..$]) {
+                        write(strip(el));
+                    }
                 }
-                //writeln("    ",join(dtoks[1..$]));
                 writeln(f[$-2..$]);
             } else {
-                writeln(" ".replicate(offset),f,"    -- ",d.nam," ",d.typ);
+                padlen = getPaddingLength(" ".replicate(offset)~f);
+                if (textmode) {
+                    writeln(" ".replicate(offset),f," ".replicate(padlen),"-- ",d.nam," ",d.typ);
+                } else {
+                    writeln(" ".replicate(offset),"<span class=\"fu\">",f,"</span>"," ".replicate(padlen),"<span class=\"co\">-- ",d.nam," ",d.typ,"</span>");
+                }
             }
         } else if (startsWith(toLower(f),"case")) {
             bool case2comment = true;
             dtoks = split(f);
-            std.stdio.write(" ".replicate(offset),strip(dtoks[0])," ");
+            if (textmode) {
+                std.stdio.write(" ".replicate(offset),strip(dtoks[0])," ");
+            } else {
+                std.stdio.write(" ".replicate(offset),"<span class=\"kwd\">",strip(dtoks[0]),"</span> ");
+            }
             foreach (el;dtoks[1..$]) {
                 if (strip(toLower(el)) in ["when":0]) {
                     if (case2comment) {
-                        std.stdio.write("    -- ",d.nam, " ",d.typ);
+                        padlen = getPaddingLength(" ".replicate(offset)~strip(dtoks[0])~" ");
+                        if (textmode) {
+                            std.stdio.write(" ".replicate(padlen),"-- ",d.nam, " ",d.typ);
+                        } else {
+                            std.stdio.write(" ".replicate(padlen),"<span class=\"co\">-- ",d.nam, " ",d.typ,"</span>");
+                        }
                         case2comment = false;
                     }
-                    std.stdio.write("\n"," ".replicate(offset+2),strip(el)," ");
+                    if (textmode) {
+                        std.stdio.write("\n"," ".replicate(offset+2),strip(el)," ");
+                    } else {
+                        std.stdio.write("\n"," ".replicate(offset+2),"<span class=\"kwd\">",strip(el),"</span> ");
+                    }
                 } else if (strip(toLower(el)) in ["then":1,"else":2]) {
-                    std.stdio.write("\n"," ".replicate(offset+2),strip(el)," ");
+                    if (textmode) {
+                        std.stdio.write("\n"," ".replicate(offset+2),strip(el)," ");
+                    } else {
+                        std.stdio.write("\n"," ".replicate(offset+2),"<span class=\"kwd\">",strip(el),"</span> ");
+                    }
                 } else if (strip(toLower(el)) == "end,") {
-                    std.stdio.write("\n"," ".replicate(offset),strip(el));
+                    if (textmode) {
+                        std.stdio.write("\n"," ".replicate(offset),strip(el));
+                    } else {
+                        std.stdio.write("\n"," ".replicate(offset),"<span class=\"kwd\">",strip(el),"</span>");
+                    }
                 } else if (toLower(el) == "end") {
-                    std.stdio.write("\n"," ".replicate(offset),strip(el),"\n  ");
+                    if (textmode) {
+                        std.stdio.write("\n"," ".replicate(offset),strip(el),"\n  ");
+                    } else {
+                        std.stdio.write("\n"," ".replicate(offset),"<span class=\"kwd\">",strip(el),"</span>\n  ");
+                    }
                 } else {
                     std.stdio.write(el," ");
                 }
             }
             writeln("");
         } else {
-            writeln(" ".replicate(offset),f,"    -- ",d.nam," ",d.typ);
+            padlen = getPaddingLength(" ".replicate(offset)~f);
+            if (textmode) {
+                writeln(" ".replicate(offset),f," ".replicate(padlen),"-- ",d.nam," ",d.typ);
+            } else {
+                writeln(" ".replicate(offset),f," ".replicate(padlen),"<span class=\"co\">-- ",d.nam," ",d.typ,"</span>");
+            }
         }
     }
 
     void printSelectFields(string s, long pos2, int offset=0, Desc[] vdesc=[]) {
-        writeln(" ".replicate(offset),s[0..7]);
+        if (textmode) {
+            writeln(" ".replicate(offset),s[0..7]);
+        } else {
+            writeln(" ".replicate(offset),"<span class=\"kwd\">",s[0..7],"</span>");
+        }
         auto selfields = getCommaFields(s[7..pos2-1]);
         foreach (ind,f; selfields) {
             f = strip(f);
@@ -587,42 +726,66 @@ void main() {
     void printFromClause(string s, long pos1, long pos2, int offset=0) {
         if (pos1 == -1) return;
 
-        writeln(" ".replicate(offset),s[pos1..pos1+5]);
+        if (textmode) {
+            writeln(" ".replicate(offset),s[pos1..pos1+5]);
+        } else {
+            writeln(" ".replicate(offset),"<span class=\"kwd\">",s[pos1..pos1+5],"</span>");
+        }
         writeln(" ".replicate(offset+2),s[pos1+5..pos2]);
     }
 
     void printWhereClause(string s, long pos1, long pos2, int offset=0) {
         if (pos1 == -1) return;
 
-        writeln(" ".replicate(offset),s[pos1..pos1+6]);
+        if (textmode) {
+            writeln(" ".replicate(offset),s[pos1..pos1+6]);
+        } else {
+            writeln(" ".replicate(offset),"<span class=\"kwd\">",s[pos1..pos1+6],"</span>");
+        }
         writeln(" ".replicate(offset+2),s[pos1+6..pos2]);
     }
 
     void printGroupbyClause(string s, long pos1, long pos2, int offset=0) {
         if (pos1 == -1) return;
 
-        writeln(" ".replicate(offset),s[pos1..pos1+9]);
+        if (textmode) {
+            writeln(" ".replicate(offset),s[pos1..pos1+9]);
+        } else {
+            writeln(" ".replicate(offset),"<span class=\"kwd\">",s[pos1..pos1+9],"</span>");
+        }
         writeln(" ".replicate(offset+2),s[pos1+9..pos2]);
     }
 
     void printHavingClause(string s, long pos1, long pos2, int offset=0) {
         if (pos1 == -1) return;
 
-        writeln(" ".replicate(offset),s[pos1..pos1+7]);
+        if (textmode) {
+            writeln(" ".replicate(offset),s[pos1..pos1+7]);
+        } else {
+            writeln(" ".replicate(offset),"<span class=\"kwd\">",s[pos1..pos1+7],"</span>");
+        }
         writeln(" ".replicate(offset+2),s[pos1+7..pos2]);
     }
 
     void printOrderbyClause(string s, long pos1, long pos2, int offset=0) {
         if (pos1 == -1) return;
 
-        writeln(" ".replicate(offset),s[pos1..pos1+9]);
+        if (textmode) {
+            writeln(" ".replicate(offset),s[pos1..pos1+9]);
+        } else {
+            writeln(" ".replicate(offset),"<span class=\"kwd\">",s[pos1..pos1+9],"</span>");
+        }
         writeln(" ".replicate(offset+2),s[pos1+9..pos2]);
     }
 
     void printUnionallClause(string s, long pos1,long pos2, int offset=0) {
         if (pos1 == -1) return;
 
-        writeln(s[pos1..pos1+10]);
+        if (textmode) {
+            writeln(s[pos1..pos1+10]);
+        } else {
+            writeln("<span class=\"kwd\">",s[pos1..pos1+10],"</span>");
+        }
         if (pos1+10 != pos2) {
             writeln(" ".replicate(offset),s[pos1+10..pos2]);
         }
@@ -822,5 +985,9 @@ void main() {
         generateHtml(view,vdef);
     }
     */
+    if (!textmode) {
+        writeln("</code></pre>");
+        writeln("</body>\n</html>\n");
+    }
 }
 
